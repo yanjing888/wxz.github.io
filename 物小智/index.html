@@ -1,0 +1,1326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>物小智 - 物理实验智能纠错与指导智能体</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;700&display=swap');
+
+        :root {
+            --bg-color: #020617;
+            --card-bg: rgba(15, 23, 42, 0.7);
+            --accent-blue: #3b82f6;
+            --accent-green: #10b981;
+            --error-red: #ef4444;
+        }
+
+        body, html {
+            background-color: var(--bg-color);
+            color: #f1f5f9;
+            font-family: 'Noto Sans SC', sans-serif;
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .glass-panel {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .page { display: none; width: 100%; height: 100%; }
+        .page.active { display: flex; }
+
+        .custom-scroll::-webkit-scrollbar { width: 4px; }
+        .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: rgba(59, 130, 246, 0.3); border-radius: 10px; }
+
+        .error-rect {
+            fill: rgba(239, 68, 68, 0.15);
+            stroke: var(--error-red);
+            stroke-width: 3;
+            stroke-dasharray: 6;
+            animation: dash 1.5s linear infinite;
+        }
+
+        @keyframes dash { to { stroke-dashoffset: 12; } }
+
+        .btn-active-scale:active { transform: scale(0.95); }
+
+        .step-item {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-left: 3px solid transparent;
+        }
+        .step-item.active {
+            background: rgba(59, 130, 246, 0.1);
+            border-left-color: var(--accent-blue);
+            color: white;
+        }
+
+        .modal-overlay { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .cam-flash { animation: camFlash 0.32s ease-out; }
+        @keyframes camFlash {
+            0% { opacity: 0; }
+            12% { opacity: 0.28; }
+            100% { opacity: 0; }
+        }
+    </style>
+</head>
+<body class="flex flex-col">
+
+    <!-- 登录页面 (保持不变) -->
+    <div id="loginPage" class="page active flex-col items-center justify-center bg-[radial-gradient(circle_at_center,_#1e293b_0%,_#020617_100%)]">
+        <div class="glass-panel p-10 w-full max-w-md shadow-2xl rounded-2xl border-white/10">
+            <div class="text-center mb-8">
+                <div class="inline-flex p-4 bg-blue-600 rounded-2xl mb-4 shadow-lg shadow-blue-600/30">
+                    <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2-2v10a2 2 0 002 2z"></path></svg>
+                </div>
+                <h1 class="text-2xl font-bold text-white">物小智·学生端</h1>
+                <p class="text-slate-400 text-sm mt-2">物理实验多模态智能指导系统</p>
+            </div>
+            <form onsubmit="handleLogin(event)" class="space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <input id="userName" required type="text" placeholder="学生姓名" class="bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-blue-500 transition-all">
+                    <input id="userClass" required type="text" placeholder="班级" class="bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-blue-500 transition-all">
+                </div>
+                <select id="expName" required class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-blue-500 transition-all">
+                    <option value="惠斯通电桥测电阻" selected>惠斯通电桥测电阻</option>
+                    <option value="单管共射放大电路调试">单管共射放大电路调试</option>
+                    <option value="示波器的原理与使用">示波器的原理与使用</option>
+                </select>
+                <button type="submit" class="w-full py-4 bg-blue-600 hover:bg-blue-500 rounded-xl font-bold text-white transition-all btn-active-scale shadow-lg shadow-blue-900/20">进入实验室</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 主界面 (保持不变) -->
+    <div id="mainPage" class="page flex-row overflow-hidden">
+        <aside class="w-16 bg-[#070b14] border-r border-slate-800 flex flex-col items-center py-6 shrink-0 z-30">
+            <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center font-bold shadow-lg shadow-blue-600/20 mb-8 cursor-pointer">智</div>
+            <nav class="flex flex-col gap-8 text-slate-500">
+                <div class="p-2 text-blue-500 border-l-2 border-blue-500 transition-all cursor-pointer"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg></div>
+                <div role="button" tabindex="0" onclick="openQuickStats()" onkeydown="if(event.key==='Enter'||event.key===' ')openQuickStats()" title="实验数据速览" class="p-2 hover:text-blue-400 cursor-pointer transition-colors text-slate-500"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg></div>
+            </nav>
+        </aside>
+
+        <main class="flex-1 flex flex-col border-r border-slate-800 bg-[#020610] overflow-hidden">
+            <header class="h-14 border-b border-white/5 bg-slate-950/40 flex items-center justify-between px-6 shrink-0">
+                <div class="flex items-center gap-4">
+                    <span id="displayExp" class="text-sm font-bold text-white tracking-tight">--</span>
+                    <div class="h-4 w-px bg-slate-700"></div>
+                    <div class="flex items-center gap-2">
+                        <span id="displayClass" class="text-[10px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded border border-blue-500/20">--</span>
+                        <span id="displayUser" class="text-[10px] text-slate-400">--</span>
+                    </div>
+                </div>
+            </header>
+
+            <section class="h-1/3 shrink-0 p-4 flex flex-col border-b border-white/5 bg-slate-900/20 overflow-hidden">
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                        <span class="w-2 h-2 bg-blue-500 rounded-full shadow-sm shadow-blue-500"></span>
+                        请自主选择当前实验步骤
+                    </h2>
+                </div>
+                
+                <div class="flex-1 flex gap-2 overflow-hidden">
+                    <div id="stepMenu" class="w-48 bg-slate-950/50 rounded-xl border border-white/5 overflow-y-auto custom-scroll p-1 shrink-0">
+                        <div onclick="selectStep(1)" id="s1" class="step-item active p-2 rounded-lg cursor-pointer mb-1">
+                            <p class="text-[10px] font-mono opacity-50">STEP 01</p>
+                            <p class="text-[11px] font-bold truncate">电桥接线与保护</p>
+                        </div>
+                        <div onclick="selectStep(2)" id="s2" class="step-item p-2 rounded-lg cursor-pointer mb-1 text-slate-500 hover:bg-white/5">
+                            <p class="text-[10px] font-mono opacity-50">STEP 02</p>
+                            <p class="text-[11px] font-bold truncate">比例臂与比较臂</p>
+                        </div>
+                        <div onclick="selectStep(3)" id="s3" class="step-item p-2 rounded-lg cursor-pointer mb-1 text-slate-500 hover:bg-white/5">
+                            <p class="text-[10px] font-mono opacity-50">STEP 03</p>
+                            <p class="text-[11px] font-bold truncate">粗调与电源通断</p>
+                        </div>
+                        <div onclick="selectStep(4)" id="s4" class="step-item p-2 rounded-lg cursor-pointer mb-1 text-slate-500 hover:bg-white/5">
+                            <p class="text-[10px] font-mono opacity-50">STEP 04</p>
+                            <p class="text-[11px] font-bold truncate">细调指零与换向</p>
+                        </div>
+                        <div onclick="selectStep(5)" id="s5" class="step-item p-2 rounded-lg cursor-pointer text-slate-500 hover:bg-white/5">
+                            <p class="text-[10px] font-mono opacity-50">STEP 05</p>
+                            <p class="text-[11px] font-bold truncate">Rx计算与不确定度</p>
+                        </div>
+                    </div>
+                    <div class="flex-1 glass-panel rounded-xl p-4 border-blue-500/10 flex flex-col justify-between overflow-hidden">
+                        <div class="overflow-y-auto custom-scroll pr-2">
+                            <h3 id="stepTitle" class="text-sm font-bold text-white mb-1">电桥电路连接与检流计保护</h3>
+                            <p id="stepDesc" class="text-[11px] text-slate-400 leading-relaxed">按原理图连接四臂电阻、电源、保护电阻与检流计；确认各桥顶点压实。通电前检流计宜置于低灵敏度或保护挡，再逐步提高灵敏度。</p>
+                        </div>
+                        <button onclick="openTutorial()" class="mt-2 flex items-center justify-center gap-2 px-3 py-1.5 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-lg text-[10px] font-bold transition-all btn-active-scale">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+                            查看本步骤教程
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <section class="flex-1 p-5 flex flex-col overflow-hidden relative min-h-0">
+                <div class="absolute top-6 left-6 z-20">
+                    <div id="analysisLabel" class="hidden px-3 py-1.5 bg-red-600 text-white text-[10px] font-bold rounded-lg shadow-xl flex items-center gap-2 animate-bounce">
+                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"></path></svg>
+                        视觉纠错：已在图中对应标注错误点
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2 shrink-0 mb-3">
+                    <span class="w-2 h-2 rounded-full bg-blue-500 shadow-sm shrink-0"></span>
+                    <h2 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">实景拍摄与原理图对照区</h2>
+                </div>
+
+                <div class="relative flex-1 min-h-0 rounded-2xl bg-slate-950 border border-white/5 shadow-inner overflow-hidden flex items-center justify-center">
+                        <img id="mainImg" src="data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAAIBRAA7" class="w-full h-full object-cover opacity-20 grayscale transition-all rounded-xl" alt="实验台拍摄或原理图对照">
+                        <svg id="svgMark" class="absolute inset-0 w-full h-full pointer-events-none hidden" viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid meet"></svg>
+                        <div id="emptyTip" class="absolute inset-0 flex flex-col items-center justify-center text-slate-700 pointer-events-none">
+                            <div class="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center mb-4 border border-white/5">
+                                <svg class="w-8 h-8 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path></svg>
+                            </div>
+                            <span class="text-[10px] font-bold uppercase tracking-widest opacity-40">上传原理图或台面实拍，可在此框内点击圈出异常位置</span>
+                        </div>
+                        <button id="delImgBtn" onclick="deleteAttachment()" class="absolute top-4 right-4 hidden p-2.5 bg-red-600/20 hover:bg-red-600 text-red-500 hover:text-white rounded-xl border border-red-600/30 transition-all btn-active-scale pointer-events-auto z-30">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
+                </div>
+            </section>
+        </main>
+
+        <aside class="w-[424px] flex flex-col bg-[#070b14] shrink-0 border-l border-slate-800/80">
+            <!-- 上位区域：紧凑机位预览 + 状态（记录区固定高度滚动，不占满纵向） -->
+            <div id="benchCamPanel" class="shrink-0 border-b border-white/5 p-3 space-y-2 bg-[#070b14]">
+                <div class="flex items-start justify-between gap-2">
+                    <h3 class="text-[10px] font-bold uppercase tracking-widest text-slate-500 flex items-center gap-2 min-w-0">
+                        <span class="w-2 h-2 rounded-full bg-blue-400 shrink-0" id="envCheckDot"></span>
+                        <span class="truncate">实验台画面</span>
+                    </h3>
+                    <label class="flex items-center gap-2 shrink-0 cursor-pointer select-none">
+                        <span class="text-[9px] text-slate-600">定期检查</span>
+                        <input type="checkbox" id="envCheckEnabled" class="accent-blue-500 w-4 h-4" checked onchange="toggleEnvCheck()">
+                    </label>
+                </div>
+                <p class="text-[9px] text-slate-600 leading-snug line-clamp-3">开启<strong class="text-slate-400">定期检查</strong>后，系统<strong class="text-slate-400">约每 1 分钟</strong>自动跑一次环境等级（无需按键）；<strong class="text-slate-400">立即检查</strong>可随时补跑一次。<strong class="text-slate-400">严重（L3）</strong>记入实验报告。请对准台面。</p>
+
+                <div class="flex gap-2 items-stretch">
+                    <div class="relative w-[108px] h-[61px] shrink-0 rounded-lg overflow-hidden border border-white/10 bg-black">
+                        <video id="benchCam" class="absolute inset-0 w-full h-full object-cover hidden" playsinline muted autoplay></video>
+                        <div id="benchCamFallback" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 text-center px-1 py-1">
+                            <p class="text-[8px] text-slate-500 leading-tight mb-1">暂无画面</p>
+                            <button type="button" onclick="startBenchCamera()" class="px-2 py-0.5 rounded-md bg-blue-600 hover:bg-blue-500 text-[8px] font-bold text-white btn-active-scale">开启</button>
+                        </div>
+                        <canvas id="benchCamCanvas" width="640" height="360" class="hidden"></canvas>
+                        <div id="benchCamFlash" class="pointer-events-none absolute inset-0 bg-white opacity-0"></div>
+                    </div>
+                    <div class="flex-1 flex flex-col gap-1 min-w-0 justify-between py-0.5">
+                        <div class="flex justify-end">
+                            <button type="button" onclick="runEnvCheckManual()" class="px-2 py-1 rounded-lg border border-white/15 text-slate-400 hover:text-white hover:border-white/25 btn-active-scale text-[9px]">立即检查</button>
+                        </div>
+                        <div class="rounded-md bg-slate-950/70 border border-white/5 px-2 py-1.5 flex items-center gap-1.5 min-h-0">
+                            <span class="text-[8px] text-slate-600 shrink-0">等级</span>
+                            <span id="envLevelBadge" class="text-[9px] font-bold px-1.5 py-0.5 rounded border bg-emerald-500/15 text-emerald-400 border-emerald-500/30 shrink-0">L0</span>
+                            <p id="envLevelHint" class="text-[9px] text-slate-500 flex-1 min-w-0 leading-tight line-clamp-2" title="">暂无异常</p>
+                        </div>
+                        <p class="text-[8px] text-slate-600 leading-none truncate" title="L0 合规 · L1 提醒 · L2 警示 · L3 严重">L0合规 · L1提醒 · L2警示 · <span class="text-red-400/90">L3严重</span></p>
+                    </div>
+                </div>
+
+                <div class="rounded-lg bg-slate-950/70 border border-white/5 overflow-hidden">
+                    <div class="flex items-center justify-between px-2 py-1 border-b border-white/5 bg-slate-900/40">
+                        <span class="text-[9px] text-slate-500 font-medium">近期记录</span>
+                    </div>
+                    <div id="envHintLog" class="h-[72px] overflow-y-auto overflow-x-hidden custom-scroll px-2 py-1 space-y-0.5"></div>
+                </div>
+            </div>
+
+            <div id="chatBox" class="flex-1 overflow-y-auto p-6 space-y-6 custom-scroll min-h-0">
+                <div class="flex gap-3">
+                    <div class="w-8 h-8 bg-blue-600 rounded-lg flex flex-shrink-0 items-center justify-center text-[10px] font-bold">智</div>
+                    <div class="bg-slate-800/60 p-4 rounded-2xl rounded-tl-none text-xs text-slate-300 leading-relaxed border border-white/5">
+                        <p class="mb-2">同学你好，实验已开始。</p>
+                        <p>请在中间栏选择当前步骤、上传实拍图；遇到困难点击<strong class="text-slate-100">「求助」</strong>。**右侧上方**可查看实验台机位画面，系统可进行后台环境风险评估（<strong class="text-slate-100">L3</strong> 记入报告）。</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-6 bg-slate-950/60 border-t border-white/5">
+                <div class="glass-panel p-3 mb-4 rounded-xl bg-slate-900/40 border-slate-800">
+                    <textarea id="msgInput" rows="2" placeholder="描述你的疑问（可选）..." class="w-full bg-transparent border-none text-sm text-slate-200 outline-none p-1 resize-none"></textarea>
+                    <div class="flex justify-between items-center mt-2">
+                        <button onclick="document.getElementById('fileInp').click()" class="flex items-center gap-2 p-2 px-3 text-[10px] text-slate-400 hover:text-blue-400 rounded-lg hover:bg-blue-400/10 transition-all btn-active-scale" title="上传附件">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+                            上传实拍图/数据截图
+                        </button>
+                        <input type="file" id="fileInp" class="hidden" accept="image/*" onchange="uploadImage(event)">
+                    </div>
+                </div>
+
+                <div class="flex flex-col gap-3">
+                    <button onclick="sendAction('help')" class="w-full py-4 bg-blue-600 hover:bg-blue-500 rounded-xl text-sm font-bold text-white shadow-lg shadow-blue-600/30 transition-all btn-active-scale flex items-center justify-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        我遇到了困难，请求协助
+                    </button>
+                    <button onclick="generateReport()" class="w-full py-3 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-500 hover:text-white border border-emerald-600/30 rounded-xl text-xs font-bold transition-all btn-active-scale">
+                        结束实验并生成总结报告
+                    </button>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- 实验总结报告弹窗 (核心更新部分) -->
+    <div id="reportModal" class="hidden modal-overlay fixed inset-0 z-[60] flex items-center justify-center p-6">
+        <div class="absolute inset-0 bg-[#020617] backdrop-blur-xl"></div>
+        <div class="relative w-full max-w-4xl max-h-[90vh] glass-panel rounded-3xl overflow-hidden flex flex-col shadow-2xl border-emerald-500/20">
+            <div class="h-1.5 w-full bg-gradient-to-r from-emerald-500 via-blue-500 to-emerald-500 shrink-0"></div>
+            
+            <div class="p-8 overflow-y-auto custom-scroll flex-1">
+                <div class="text-center mb-10">
+                    <h2 class="text-3xl font-black text-white mb-2">实验总结报告</h2>
+                    <p class="text-slate-500 text-sm">生成时间：<span id="reportTime">--</span></p>
+                </div>
+
+                <div class="space-y-12">
+                    <!-- 1. 实操回顾 数据统计 -->
+                    <section>
+                        <h3 class="text-lg font-bold text-white flex items-center gap-3 mb-6">
+                            <span class="w-1.5 h-6 bg-blue-500 rounded-full"></span>1. 实操回顾与数据统计
+                        </h3>
+                        <div class="overflow-x-auto -mx-1 px-1 pb-1 scrollbar-thin">
+                            <div class="grid grid-cols-4 gap-3 lg:gap-5 min-w-[680px]">
+                            <div class="min-w-0 p-4 lg:p-5 bg-slate-900/50 rounded-2xl border border-white/5 text-center flex flex-col justify-center">
+                                <p class="text-[9px] lg:text-[10px] text-slate-500 uppercase tracking-wider mb-2 font-bold leading-snug break-words">有效纠错次数</p>
+                                <p id="helpCountDisplay" class="text-2xl lg:text-3xl font-black text-blue-500 tabular-nums">0</p>
+                            </div>
+                            <div class="min-w-0 p-4 lg:p-5 bg-slate-900/50 rounded-2xl border border-white/5 text-center flex flex-col justify-center">
+                                <p class="text-[9px] lg:text-[10px] text-slate-500 uppercase tracking-wider mb-2 font-bold leading-snug break-words">纠错标注点数</p>
+                                <p id="errorCountDisplay" class="text-2xl lg:text-3xl font-black text-red-500 tabular-nums">0</p>
+                            </div>
+                            <div class="min-w-0 p-4 lg:p-5 bg-slate-900/50 rounded-2xl border border-white/5 text-center flex flex-col justify-center">
+                                <p class="text-[9px] lg:text-[10px] text-slate-500 uppercase tracking-wider mb-2 font-bold leading-snug break-words">教程查阅次数</p>
+                                <p id="tutCountDisplay" class="text-2xl lg:text-3xl font-black text-emerald-500 tabular-nums">0</p>
+                            </div>
+                            <div class="min-w-0 p-4 lg:p-5 bg-slate-900/50 rounded-2xl border border-white/5 text-center flex flex-col justify-center">
+                                <p class="text-[9px] lg:text-[10px] text-slate-500 uppercase tracking-wider mb-2 font-bold leading-snug break-words">严重告警（L3）次数</p>
+                                <p id="monitorL3Display" class="text-2xl lg:text-3xl font-black text-red-500 tabular-nums">0</p>
+                            </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- 2. 核心操作与安全记录 -->
+                    <section>
+                        <h3 class="text-lg font-bold text-white flex items-center gap-3 mb-6">
+                            <span class="w-1.5 h-6 bg-red-500 rounded-full"></span>2. 核心操作错误总结
+                        </h3>
+                        <div id="errorSummaryList" class="space-y-10">
+                            <div>
+                                <h4 class="text-sm font-bold text-red-400 mb-3 flex items-center gap-2">
+                                    <span class="w-1 h-4 bg-red-500 rounded-full shrink-0"></span>2.1 操作错误与纠错记录
+                                </h4>
+                                <div id="reportOpErrors" class="space-y-4"></div>
+                            </div>
+                            <div>
+                                <h4 class="text-sm font-bold text-amber-400 mb-3 flex items-center gap-2">
+                                    <span class="w-1 h-4 bg-amber-500 rounded-full shrink-0"></span>2.2 实验台安全等级检查记录
+                                </h4>
+                                <div id="reportEnvSafetyLog" class="space-y-3"></div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- 3. 下一步学习建议 -->
+                    <section>
+                        <h3 class="text-lg font-bold text-white flex items-center gap-3 mb-6">
+                            <span class="w-1.5 h-6 bg-emerald-500 rounded-full"></span>3. 针对性学习建议与路径
+                        </h3>
+                        <div class="grid grid-cols-2 gap-6">
+                            <div class="p-6 bg-slate-900/50 rounded-2xl border border-white/5">
+                                <h4 class="text-sm font-bold text-emerald-400 mb-3 flex items-center gap-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>
+                                    知识点补强
+                                </h4>
+                                <ul id="reportKnowledgeBullets" class="text-xs text-slate-400 space-y-2 leading-relaxed">
+                                    <li>• 惠斯通电桥平衡条件与桥路灵敏度</li>
+                                    <li>• 检流计保护与滑线触头接触电阻的影响</li>
+                                    <li>• 测量不确定度的 A 类、B 类合成思路</li>
+                                </ul>
+                            </div>
+                            <div class="p-6 bg-slate-900/50 rounded-2xl border border-white/5">
+                                <h4 class="text-sm font-bold text-blue-400 mb-3 flex items-center gap-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+                                    推荐学习路径
+                                </h4>
+                                <div id="reportLearningPath" class="space-y-4">
+                                    <div class="flex items-start gap-3">
+                                        <div class="w-5 h-5 bg-blue-500/20 text-blue-400 rounded flex items-center justify-center text-[10px] font-bold shrink-0">1</div>
+                                        <p class="text-[11px] text-slate-400">复习教材「直流电桥」与「不确定度评定」章节</p>
+                                    </div>
+                                    <div class="flex items-start gap-3">
+                                        <div class="w-5 h-5 bg-blue-500/20 text-blue-400 rounded flex items-center justify-center text-[10px] font-bold shrink-0">2</div>
+                                        <p class="text-[11px] text-slate-400">对比标准电阻或仿真结果，自检 Rx 数量级与误差带</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                <div class="mt-12 mb-8 flex justify-center gap-4">
+                    <button onclick="location.reload()" class="px-10 py-3 bg-white text-slate-900 rounded-xl text-sm font-bold hover:bg-slate-200 transition-colors btn-active-scale">完成并提交</button>
+                    <button onclick="document.getElementById('reportModal').classList.add('hidden')" class="px-10 py-3 bg-slate-800 text-white rounded-xl text-sm font-bold border border-white/5 hover:bg-slate-700 transition-colors btn-active-scale">返回实验室</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 实验数据速览（侧栏统计图标） -->
+    <div id="quickStatsModal" class="hidden modal-overlay fixed inset-0 z-[55] flex items-center justify-center p-6">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeQuickStats()" aria-hidden="true"></div>
+        <div class="relative w-full max-w-sm glass-panel rounded-2xl border border-white/10 p-6 shadow-2xl z-10">
+            <div class="flex justify-between items-start mb-4">
+                <h3 class="text-lg font-bold text-white">实验数据速览</h3>
+                <button type="button" onclick="closeQuickStats()" class="p-1.5 rounded-lg hover:bg-white/10 text-slate-400" aria-label="关闭">✕</button>
+            </div>
+            <p class="text-[11px] text-slate-500 mb-4">当前步骤与本次会话内的统计（页面刷新后清零）。</p>
+            <ul class="space-y-3 text-sm text-slate-300">
+                <li class="flex justify-between border-b border-white/5 pb-2"><span class="text-slate-500">当前步骤</span><span id="qsStep" class="font-medium text-white text-right max-w-[60%]">--</span></li>
+                <li class="flex justify-between border-b border-white/5 pb-2"><span class="text-slate-500">有效纠错次数</span><span id="qsHelp" class="font-mono text-blue-400">0</span></li>
+                <li class="flex justify-between border-b border-white/5 pb-2"><span class="text-slate-500">纠错标注点数</span><span id="qsErr" class="font-mono text-red-400">0</span></li>
+                <li class="flex justify-between border-b border-white/5 pb-2"><span class="text-slate-500">教程查阅次数</span><span id="qsTut" class="font-mono text-emerald-400">0</span></li>
+                <li class="flex justify-between"><span class="text-slate-500">严重告警(L3)</span><span id="qsLabL3" class="font-mono text-red-400">0</span></li>
+            </ul>
+            <button type="button" onclick="closeQuickStats()" class="mt-6 w-full py-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-sm font-bold text-white border border-white/5">关闭</button>
+        </div>
+    </div>
+
+    <!-- 多模态教程弹窗 (保持不变) -->
+    <div id="tutorialModal" class="hidden modal-overlay fixed inset-0 z-50 flex items-center justify-center p-6">
+        <div class="absolute inset-0 bg-black/90 backdrop-blur-md" onclick="closeTutorial()"></div>
+        <div class="relative w-full max-w-5xl h-[85vh] glass-panel rounded-3xl flex flex-col overflow-hidden shadow-2xl border-blue-500/30">
+            <div class="p-6 border-b border-white/10 bg-blue-600/10 flex justify-between items-center shrink-0">
+                <div class="flex items-center gap-3">
+                    <div class="p-2 bg-blue-600 rounded-lg"><svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg></div>
+                    <h3 id="tutTitle" class="text-xl font-bold text-white">多模态实验指导</h3>
+                </div>
+                <button onclick="closeTutorial()" class="p-2 hover:bg-white/10 rounded-full text-slate-400 transition-colors"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+            </div>
+            <div class="flex-1 flex overflow-hidden">
+                <div class="w-2/3 border-r border-white/5 flex flex-col p-6 gap-6 overflow-y-auto custom-scroll">
+                    <div class="space-y-2">
+                        <p class="text-[10px] font-bold text-blue-400 uppercase tracking-widest flex items-center gap-2"><span class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span> 视频：内嵌演示动画（单文件即可，无需本地 MP4）</p>
+                        <div id="tutVideoBox" class="aspect-video rounded-2xl bg-black overflow-hidden relative border border-white/10">
+                            <canvas id="tutDemoCanvas" class="absolute inset-0 block h-full w-full bg-black"></canvas>
+                        </div>
+                    </div>
+                    <div class="space-y-2">
+                        <p class="text-[10px] font-bold text-blue-400 uppercase tracking-widest">图片：内嵌 SVG 示意（单文件，无 media 目录）</p>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="rounded-xl overflow-hidden border border-white/5 h-48"><img id="tutImg1" src="" class="w-full h-full object-cover"></div>
+                            <div class="rounded-xl overflow-hidden border border-white/5 h-48"><img id="tutImg2" src="" class="w-full h-full object-cover"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="w-1/3 p-6 overflow-y-auto custom-scroll bg-slate-950/40">
+                    <div class="space-y-8">
+                        <section>
+                            <h4 class="text-xs font-bold text-slate-500 mb-3 border-b border-white/5 pb-2">操作指引</h4>
+                            <div id="tutTextSteps" class="space-y-4"></div>
+                        </section>
+                        <section>
+                            <h4 class="text-xs font-bold text-red-500/70 mb-3 border-b border-red-500/10 pb-2">安全预警 / 常见错误</h4>
+                            <div id="tutTextWarnings" class="space-y-3 bg-red-500/5 p-4 rounded-xl border border-red-500/10"></div>
+                        </section>
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 border-t border-white/5 bg-slate-950/60 flex justify-end shrink-0">
+                <button onclick="closeTutorial()" class="px-8 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-sm transition-all btn-active-scale">已了解，返回实验</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentImage = null;
+        let helpCounter = 0;
+        let errorPointCounter = 0;
+        let tutViewCounter = 0;
+        let activeStep = 1;
+
+        let benchStream = null;
+        let envSampleIntervalId = null;
+        let labL3Count = 0;
+        let envCheckRunning = false;
+        const envHintLogMax = 18;
+        const ENV_SAMPLE_MS = 60 * 1000;
+        const ENV_CHECK_NOTE = '(示意)';
+
+        // 模拟错误日志，用于生成总结（可带纠错当时画面缩略图）
+        let errorLogs = [];
+        /** 每次「定期检查」执行一条：时间、等级、摘要、可选实验台抓拍 */
+        let envCheckReportLog = [];
+        const ENV_REPORT_LOG_MAX = 72;
+
+        /** 登录后当前实验（与登录 #expName 一致），用于「上传图 + 惠斯通电桥」时走固定纠错 */
+        let currentExperimentName = '';
+
+        /**
+         * 惠斯通电桥：已上传实拍后点击「协助」时固定使用（与步骤无关）。
+         * 红框坐标基于 #svgMark viewBox="0 0 1000 600"，对应台面图：左万用表 / 中面包板桥臂 / 电源与右侧接入。
+         */
+        const WHEATSTONE_UPLOAD_FIXED_ASSIST = {
+            errorType: '惠斯通电桥·关键错误（固定标注）',
+            detail: '万用表接法错误；桥臂未构成标准电桥；电源无限流且电压偏高。',
+            feedback: `关键错误，一共 3 个，按严重程度给你标出来：
+
+🔴 **致命错误：万用表的接法完全错误**
+
+**档位接错**：万用表现在的旋钮位置，明显不是电流档 / 电压档，也不是欧姆档，说明档位没有拨到测量需要的位置。
+
+**表笔插孔接错**：红表笔插在了电流 / 电压档的孔里，而黑表笔虽然插对了 COM 孔，但在惠斯通电桥实验中，万用表应该接在电桥的对角线上，用来检测平衡状态（电流为 0）。现在的接法完全不符合电桥电路的测量要求。
+
+**功能错误**：万用表在这里应该作为检流计使用，而不是接在电源回路里测电压 / 电流。
+
+🟠 **电路连接错误：电桥桥臂接法不对**
+
+惠斯通电桥的标准结构是四个桥臂、两个对角（电源和检流计），但图中面包板上的接线混乱，没有形成完整的桥路：
+
+电源直接接在桥臂的两端，没有形成标准的电源对角；
+桥臂的连接方式不对，没有构成平衡电桥所需的闭环回路；
+可变电阻箱（右上角的黑色仪器）的接线也没有正确接入电桥桥臂。
+
+🟡 **电源使用的问题**
+
+电源直接接在桥路上，没有限流电阻，也没有开关控制，一旦电桥严重不平衡，会直接烧坏万用表或电阻。
+
+电源电压设置为 6V，对于这类小功率电阻实验来说，电压偏高，也容易导致电流过大。`,
+            marks: [
+                { x: 32, y: 82, w: 242, h: 288, n: 1 },
+                { x: 265, y: 272, w: 308, h: 258, n: 2 },
+                { x: 420, y: 52, w: 548, h: 392, n: 3 },
+            ],
+        };
+
+        /** 教程/占位：内嵌 SVG（data URI），不依赖外链，离线或国内网络也可显示 */
+        function svgDataUri(svgMarkup) {
+            return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgMarkup);
+        }
+
+        const TUT_SVG = {
+            mainBg: svgDataUri('<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1e293b"/><stop offset="1" stop-color="#0f172a"/></linearGradient></defs><rect width="1200" height="800" fill="url(#g)"/><g fill="none" stroke="#334155" stroke-width="2"><rect x="120" y="160" width="960" height="480" rx="24" opacity="0.5"/><path d="M200 520 L400 380 L600 460 L800 320 L1000 400"/></g><text x="600" y="420" text-anchor="middle" fill="#64748b" font-family="sans-serif" font-size="28" font-weight="bold">实验台面示意 · 请上传实拍</text></svg>')
+        };
+
+        const MAIN_IMG_PLACEHOLDER = TUT_SVG.mainBg;
+
+        let tutDemoRaf = 0;
+        let tutDemoResizeObs = null;
+
+        function stopTutDemoAnim() {
+            if (tutDemoRaf) cancelAnimationFrame(tutDemoRaf);
+            tutDemoRaf = 0;
+            if (tutDemoResizeObs) {
+                tutDemoResizeObs.disconnect();
+                tutDemoResizeObs = null;
+            }
+        }
+
+        /** 教程区演示：Canvas 绘制，不引用任何本地/外链视频文件 */
+        function startTutDemoAnim() {
+            stopTutDemoAnim();
+            const canvas = document.getElementById('tutDemoCanvas');
+            const box = document.getElementById('tutVideoBox');
+            if (!canvas || !box) return;
+            const ctx = canvas.getContext('2d');
+            const dpr = Math.min(2, window.devicePixelRatio || 1);
+            function fit() {
+                const r = box.getBoundingClientRect();
+                const w = Math.max(280, Math.floor(r.width));
+                const h = Math.max(158, Math.floor(r.height));
+                canvas.style.width = `${w}px`;
+                canvas.style.height = `${h}px`;
+                canvas.width = Math.floor(w * dpr);
+                canvas.height = Math.floor(h * dpr);
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            }
+            fit();
+            tutDemoResizeObs = new ResizeObserver(fit);
+            tutDemoResizeObs.observe(box);
+
+            const exp = currentExperimentName;
+            const step = activeStep;
+            const t0 = performance.now();
+
+            function drawBridgeMeter(w, h, t) {
+                ctx.fillStyle = '#0c1220';
+                ctx.fillRect(0, 0, w, h);
+                const cx = w * 0.5;
+                const cy = h * 0.58;
+                const r = Math.min(w, h) * 0.38;
+                ctx.strokeStyle = '#334155';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(cx, cy, r, Math.PI * 1.1, Math.PI * 1.9);
+                ctx.stroke();
+                const settle = Math.exp(-(t % 6) * 0.35);
+                const jitter = Math.sin(t * 8) * 0.04 * settle;
+                const ang = Math.PI * 1.52 + Math.sin(t * 2.2 + step) * 0.35 * settle + jitter;
+                ctx.strokeStyle = '#fbbf24';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(cx, cy);
+                ctx.lineTo(cx + Math.cos(ang) * r * 0.88, cy + Math.sin(ang) * r * 0.88);
+                ctx.stroke();
+                ctx.fillStyle = '#475569';
+                ctx.beginPath();
+                ctx.arc(cx, cy, 7, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = `600 ${Math.max(11, w * 0.028)}px "Noto Sans SC",sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.fillText('检流计调节示意（非实拍）', cx, h * 0.12);
+                ctx.fillStyle = '#64748b';
+                ctx.font = `${Math.max(10, w * 0.024)}px "Noto Sans SC",sans-serif`;
+                ctx.fillText(`步骤 ${step} · 向平衡点缓慢收敛`, cx, h * 0.2);
+            }
+
+            function drawScope(w, h, tt) {
+                ctx.fillStyle = '#020617';
+                ctx.fillRect(0, 0, w, h);
+                ctx.strokeStyle = 'rgba(51, 65, 85, 0.6)';
+                ctx.lineWidth = 1;
+                const gx = 12;
+                const gw = w - 24;
+                const gh = h - 36;
+                const gy = h * 0.42 - gh * 0.5;
+                for (let i = 0; i <= 10; i++) {
+                    const x = gx + (gw * i) / 10;
+                    ctx.beginPath();
+                    ctx.moveTo(x, gy);
+                    ctx.lineTo(x, gy + gh);
+                    ctx.stroke();
+                }
+                for (let j = 0; j <= 6; j++) {
+                    const y = gy + (gh * j) / 6;
+                    ctx.beginPath();
+                    ctx.moveTo(gx, y);
+                    ctx.lineTo(gx + gw, y);
+                    ctx.stroke();
+                }
+                const midY = gy + gh * 0.5;
+                const freq = 2 + step * 0.15;
+                ctx.strokeStyle = '#34d399';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                for (let x = 0; x <= gw; x += 2) {
+                    const px = gx + x;
+                    const ph = Math.sin((x / gw) * Math.PI * 4 * freq - tt * 5) * gh * 0.32;
+                    if (x === 0) ctx.moveTo(px, midY - ph);
+                    else ctx.lineTo(px, midY - ph);
+                }
+                ctx.stroke();
+                ctx.strokeStyle = 'rgba(248, 113, 113, 0.85)';
+                ctx.setLineDash([6, 4]);
+                const trigY = midY + Math.sin(tt * 0.7 + step) * gh * 0.15;
+                ctx.beginPath();
+                ctx.moveTo(gx, trigY);
+                ctx.lineTo(gx + gw, trigY);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.fillStyle = '#64748b';
+                ctx.font = `${Math.max(10, w * 0.024)}px "Noto Sans SC",sans-serif`;
+                ctx.textAlign = 'left';
+                ctx.fillText('示波器波形 / 触发电平示意（非实拍）', gx, h * 0.08);
+            }
+
+            function drawAmpDual(w, h, tt) {
+                ctx.fillStyle = '#0a0f18';
+                ctx.fillRect(0, 0, w, h);
+                const gx = 16;
+                const gw = w - 32;
+                const midY = h * 0.38;
+                const ampOut = 0.22 + step * 0.02;
+                const ampIn = 0.09;
+                ctx.strokeStyle = 'rgba(59, 130, 246, 0.7)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                for (let x = 0; x <= gw; x += 2) {
+                    const px = gx + x;
+                    const ph = Math.sin((x / gw) * Math.PI * 6 - tt * 4) * h * ampIn;
+                    if (x === 0) ctx.moveTo(px, midY - ph);
+                    else ctx.lineTo(px, midY - ph);
+                }
+                ctx.stroke();
+                ctx.strokeStyle = 'rgba(16, 185, 129, 0.85)';
+                ctx.beginPath();
+                for (let x = 0; x <= gw; x += 2) {
+                    const px = gx + x;
+                    const ph = Math.sin((x / gw) * Math.PI * 6 - tt * 4 + Math.PI) * h * ampOut;
+                    if (x === 0) ctx.moveTo(px, midY + 28 - ph);
+                    else ctx.lineTo(px, midY + 28 - ph);
+                }
+                ctx.stroke();
+                ctx.fillStyle = '#64748b';
+                ctx.font = `${Math.max(10, w * 0.024)}px "Noto Sans SC",sans-serif`;
+                ctx.fillText('蓝色：输入 Vi   绿色：输出 Vo（相位示意）', gx, 22);
+                ctx.fillStyle = '#475569';
+                ctx.font = `${Math.max(9, w * 0.022)}px "Noto Sans SC",sans-serif`;
+                ctx.fillText('放大电路步骤示意 · 非实测录屏', gx, h - 14);
+            }
+
+            function loop(now) {
+                const t = (now - t0) / 1000;
+                const cw = canvas.width / dpr;
+                const ch = canvas.height / dpr;
+                if (exp === '惠斯通电桥测电阻') drawBridgeMeter(cw, ch, t);
+                else if (exp === '示波器的原理与使用') drawScope(cw, ch, t);
+                else drawAmpDual(cw, ch, t);
+                tutDemoRaf = requestAnimationFrame(loop);
+            }
+            tutDemoRaf = requestAnimationFrame(loop);
+        }
+
+        function tutIllustrationEscape(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        /** 教程插图：SVG data URI，不依赖 media 文件夹 */
+        function tutorialIllustrationDataUri(expName, step, panel) {
+            const W = 400;
+            const H = 240;
+            const z = tutIllustrationEscape;
+            const p = panel === 2 ? 2 : 1;
+            let caption = '';
+            let body = '';
+
+            if (expName === '惠斯通电桥测电阻') {
+                switch (step) {
+                    case 1:
+                        caption = p === 1 ? '四臂桥路与电源/检流计对角' : '桥臂结点压实 · 灵敏度由低起调';
+                        body =
+                            p === 1
+                                ? '<g fill="none" stroke="#64748b" stroke-width="2"><path d="M200 64 L292 120 L200 176 L108 120 Z"/><path d="M200 64 L200 38 M108 120 L72 120 M200 176 L200 202 M292 120 L332 120"/><path d="M72 120 L48 120" stroke="#ef4444"/><path d="M332 120 L356 120" stroke="#3b82f6"/></g><circle cx="200" cy="120" r="16" fill="#0f172a" stroke="#fbbf24" stroke-width="2"/><text x="200" y="124" text-anchor="middle" fill="#fbbf24" font-size="11" font-weight="bold" font-family="sans-serif">G</text>'
+                                : '<g stroke="#64748b" stroke-width="2" fill="none"><circle cx="130" cy="100" r="10"/><circle cx="200" cy="80" r="10"/><circle cx="270" cy="100" r="10"/><circle cx="200" cy="150" r="10"/></g><text x="200" y="190" text-anchor="middle" fill="#94a3b8" font-size="11" font-family="sans-serif">四结点压实后再逐步提高灵敏度</text>';
+                        break;
+                    case 2:
+                        caption = p === 1 ? '比例臂 R1/R2 与比较臂 R0' : 'R0 或滑线先置中段';
+                        body =
+                            p === 1
+                                ? '<g fill="none" stroke="#64748b" stroke-width="2"><rect x="90" y="95" width="70" height="28" rx="4"/><rect x="240" y="95" width="70" height="28" rx="4"/><rect x="160" y="140" width="80" height="36" rx="4"/></g><text x="125" y="115" text-anchor="middle" fill="#94a3b8" font-size="11" font-family="sans-serif">R1</text><text x="275" y="115" text-anchor="middle" fill="#94a3b8" font-size="11" font-family="sans-serif">R2</text><text x="200" y="163" text-anchor="middle" fill="#fbbf24" font-size="11" font-family="sans-serif">R0</text>'
+                                : '<g stroke="#fbbf24" stroke-width="3" fill="none"><line x1="80" y1="130" x2="320" y2="130"/><circle cx="200" cy="130" r="8" fill="#334155"/></g><text x="200" y="175" text-anchor="middle" fill="#94a3b8" font-size="11" font-family="sans-serif">触头先放中段 · 双向可调</text>';
+                        break;
+                    case 3:
+                        caption = p === 1 ? '电源回路 · 保护电阻与开关' : '粗调：短时通电看偏转方向';
+                        body =
+                            p === 1
+                                ? '<rect x="100" y="100" width="64" height="40" rx="4" fill="none" stroke="#3b82f6" stroke-width="2"/><path d="M180 118 L220 118" stroke="#64748b" stroke-width="3"/><rect x="232" y="108" width="36" height="24" rx="2" fill="#1e293b" stroke="#64748b"/><text x="132" y="124" fill="#60a5fa" font-size="10" font-family="sans-serif">E,r</text>'
+                                : '<defs><marker id="tutArr" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#94a3b8"/></marker></defs><path d="M120 120 L280 120" stroke="#64748b" stroke-width="2" marker-end="url(#tutArr)"/><text x="200" y="95" text-anchor="middle" fill="#94a3b8" font-size="11" font-family="sans-serif">按偏转方向决定增大或减小 R0</text>';
+                        break;
+                    case 4:
+                        caption = p === 1 ? '高灵敏度下细调指零' : '换向测量削弱热电势';
+                        body =
+                            p === 1
+                                ? '<path d="M120 160 A 80 80 0 0 1 280 160" fill="none" stroke="#64748b" stroke-width="2"/><line x1="200" y1="160" x2="235" y2="118" stroke="#fbbf24" stroke-width="3"/><circle cx="200" cy="160" r="6" fill="#475569"/>'
+                                : '<text x="140" y="110" fill="#60a5fa" font-size="28" font-family="sans-serif">+</text><text x="248" y="110" fill="#60a5fa" font-size="28" font-family="sans-serif">−</text><path d="M190 140 L210 140" stroke="#94a3b8" stroke-width="2" stroke-dasharray="4 3"/><text x="200" y="185" text-anchor="middle" fill="#94a3b8" font-size="11" font-family="sans-serif">交换电源极性 · 两次取平均</text>';
+                        break;
+                    case 5:
+                    default:
+                        caption = p === 1 ? '数据表与平衡式' : '合成不确定度记录项';
+                        body =
+                            p === 1
+                                ? '<rect x="90" y="85" width="220" height="100" rx="6" fill="none" stroke="#334155" stroke-width="1"/><line x1="90" y1="110" x2="310" y2="110" stroke="#334155"/><line x1="140" y1="85" x2="140" y2="185" stroke="#334155"/><text x="200" y="78" text-anchor="middle" fill="#fbbf24" font-size="13" font-family="sans-serif">Rx ≈ (R1/R2)·R0</text>'
+                                : '<rect x="95" y="95" width="50" height="70" fill="#334155" opacity="0.5"/><rect x="165" y="110" width="50" height="55" fill="#334155" opacity="0.5"/><rect x="235" y="100" width="50" height="65" fill="#334155" opacity="0.5"/><text x="200" y="200" text-anchor="middle" fill="#94a3b8" font-size="11" font-family="sans-serif">A 类/B 类误差条示意</text>';
+                        break;
+                }
+            } else if (expName === '单管共射放大电路调试') {
+                switch (step) {
+                    case 1:
+                        caption = p === 1 ? '面包板上的三极管 E·B·C' : '电解电容极性（长正短负）';
+                        body =
+                            p === 1
+                                ? '<circle cx="200" cy="125" r="45" fill="none" stroke="#64748b" stroke-width="2"/><line x1="200" y1="80" x2="200" y2="170" stroke="#94a3b8" stroke-width="3"/><line x1="175" y1="125" x2="155" y2="125" stroke="#94a3b8" stroke-width="2"/><line x1="225" y1="125" x2="255" y2="125" stroke="#94a3b8" stroke-width="2"/><text x="200" y="62" text-anchor="middle" fill="#fbbf24" font-size="11" font-family="sans-serif">C</text><text x="140" y="130" text-anchor="middle" fill="#60a5fa" font-size="11" font-family="sans-serif">B</text><text x="200" y="188" text-anchor="middle" fill="#34d399" font-size="11" font-family="sans-serif">E</text>'
+                                : '<path d="M160 100 L240 100 L240 150 L160 150 Z" fill="none" stroke="#64748b" stroke-width="2"/><line x1="185" y1="100" x2="185" y2="70" stroke="#ef4444"/><line x1="215" y1="100" x2="215" y2="70" stroke="#334155"/><text x="200" y="128" text-anchor="middle" fill="#94a3b8" font-size="22" font-family="sans-serif">+</text><text x="200" y="188" text-anchor="middle" fill="#94a3b8" font-size="11" font-family="sans-serif">长脚接正极网络</text>';
+                        break;
+                    case 2:
+                        caption = p === 1 ? '电位器三端接入 Rb' : '缓慢旋柄 · 观察 Vce 变化';
+                        body =
+                            p === 1
+                                ? '<rect x="140" y="88" width="120" height="64" rx="8" fill="#1e293b" stroke="#64748b"/><circle cx="200" cy="120" r="22" fill="none" stroke="#fbbf24" stroke-width="2"/><line x1="200" y1="98" x2="200" y2="108" stroke="#fbbf24"/><circle cx="165" cy="160" r="4" fill="#94a3b8"/><circle cx="200" cy="168" r="4" fill="#94a3b8"/><circle cx="235" cy="160" r="4" fill="#94a3b8"/>'
+                                : '<path d="M120 120 Q200 80 280 120" fill="none" stroke="#34d399" stroke-width="2"/><circle cx="200" cy="100" r="6" fill="#34d399"/><text x="200" y="165" text-anchor="middle" fill="#94a3b8" font-size="11" font-family="sans-serif">工作点宜落在放大区中部</text>';
+                        break;
+                    case 3:
+                        caption = p === 1 ? '万用表直流电压档' : '黑表笔接地 · 红表笔单点';
+                        body =
+                            p === 1
+                                ? '<rect x="130" y="88" width="140" height="72" rx="6" fill="#0f172a" stroke="#64748b"/><rect x="150" y="108" width="100" height="32" fill="#1e293b" stroke="#334155"/><text x="200" y="128" text-anchor="middle" fill="#34d399" font-size="16" font-family="sans-serif">DC V</text>'
+                                : '<circle cx="150" cy="130" r="6" fill="#1e293b" stroke="#fbbf24"/><circle cx="250" cy="130" r="6" fill="#1e293b" stroke="#ef4444"/><text x="150" y="158" text-anchor="middle" fill="#94a3b8" font-size="10" font-family="sans-serif">COM</text><text x="250" y="158" text-anchor="middle" fill="#94a3b8" font-size="10" font-family="sans-serif">V</text>';
+                        break;
+                    case 4:
+                        caption = p === 1 ? '示波器上的正弦波形' : '探头 ×1/×10 与触发电平';
+                        body =
+                            p === 1
+                                ? '<rect x="70" y="78" width="260" height="100" rx="4" fill="#020617" stroke="#334155"/><path d="M90 128 Q130 88 170 128 T250 128" fill="none" stroke="#34d399" stroke-width="2"/>'
+                                : '<rect x="70" y="78" width="260" height="100" rx="4" fill="#020617" stroke="#334155"/><path d="M85 105 L315 105" stroke="#ef4444" stroke-width="1" stroke-dasharray="5 4"/><path d="M90 128 Q140 98 190 128 T290 118" fill="none" stroke="#34d399" stroke-width="2"/>';
+                        break;
+                    case 5:
+                    default:
+                        caption = p === 1 ? '双通道读 Vi 与 Vo 峰峰值' : '换算到同一垂直标尺';
+                        body =
+                            p === 1
+                                ? '<rect x="70" y="78" width="260" height="100" rx="4" fill="#020617" stroke="#334155"/><line x1="90" y1="115" x2="270" y2="115" stroke="#3b82f6" stroke-opacity="0.45" stroke-width="2"/><path d="M90 108 Q140 88 190 108" fill="none" stroke="#60a5fa" stroke-width="2"/><path d="M90 138 Q150 168 210 138" fill="none" stroke="#10b981" stroke-width="2"/>'
+                                : '<text x="200" y="110" text-anchor="middle" fill="#fbbf24" font-size="15" font-family="sans-serif">Au ≈ Vo(pp) / Vi(pp)</text><text x="200" y="155" text-anchor="middle" fill="#94a3b8" font-size="11" font-family="sans-serif">注意 CH1/CH2 与探头衰减一致</text>';
+                        break;
+                }
+            } else {
+                switch (step) {
+                    case 1:
+                        caption = p === 1 ? '信号源 · 示波器 · 电路共地' : '短线/spring 地 · 减小地环';
+                        body =
+                            p === 1
+                                ? '<path d="M80 140 L120 140 M120 130 L120 150 M110 150 L130 130" stroke="#94a3b8" fill="none" stroke-width="2"/><rect x="140" y="115" width="60" height="50" rx="4" fill="none" stroke="#3b82f6"/><rect x="220" y="110" width="80" height="60" rx="4" fill="none" stroke="#34d399"/><rect x="320" y="118" width="50" height="44" rx="4" fill="none" stroke="#fbbf24"/>'
+                                : '<path d="M100 90 C140 130 180 70 280 120" fill="none" stroke="#64748b" stroke-dasharray="4 3"/><text x="200" y="175" text-anchor="middle" fill="#94a3b8" font-size="11" font-family="sans-serif">地线在探头侧尽量短</text>';
+                        break;
+                    case 2:
+                        caption = p === 1 ? 'CAL 方波 · 观察补偿' : '小螺丝刀微调探头电容';
+                        body =
+                            p === 1
+                                ? '<rect x="95" y="85" width="210" height="90" rx="4" fill="#020617" stroke="#334155"/><path d="M100 120 H115 V95 H185 V145 H215 V95 H285 V120 H300" fill="none" stroke="#34d399" stroke-width="2"/>'
+                                : '<circle cx="300" cy="155" r="14" fill="none" stroke="#fbbf24" stroke-width="2"/><line x1="300" y1="155" x2="312" y2="145" stroke="#94a3b8"/><text x="200" y="198" text-anchor="middle" fill="#94a3b8" font-size="11" font-family="sans-serif">至方波直角沿清晰、少振铃</text>';
+                        break;
+                    case 3:
+                        caption = p === 1 ? '垂直档位 × 时基档位' : '屏内约 1～3 个周期';
+                        body =
+                            p === 1
+                                ? '<rect x="80" y="82" width="240" height="96" rx="4" fill="#020617" stroke="#334155"/><line x1="92" y1="90" x2="92" y2="170" stroke="#334155" stroke-opacity="0.25"/><path d="M96 130 Q120 100 160 130 T240 130" fill="none" stroke="#34d399" stroke-width="2"/><text x="200" y="200" text-anchor="middle" fill="#64748b" font-size="10" font-family="sans-serif">V/div 与 s/div 配合</text>'
+                                : '<rect x="80" y="82" width="240" height="96" rx="4" fill="#020617" stroke="#334155"/><path d="M96 130 L140 95 L184 130 L228 95 L272 130" fill="none" stroke="#60a5fa" stroke-width="2"/>';
+                        break;
+                    case 4:
+                        caption = p === 1 ? '触发电平穿过信号摆幅' : '触发源与边沿模式';
+                        body =
+                            p === 1
+                                ? '<rect x="80" y="82" width="240" height="96" rx="4" fill="#020617" stroke="#334155"/><path d="M100 120 Q150 90 200 120 T300 110" fill="none" stroke="#34d399" stroke-width="2"/><line x1="85" y1="112" x2="305" y2="112" stroke="#ef4444" stroke-dasharray="5 4"/>'
+                                : '<rect x="115" y="95" width="170" height="28" rx="4" fill="#1e293b" stroke="#64748b"/><text x="200" y="114" text-anchor="middle" fill="#94a3b8" font-size="11" font-family="sans-serif">EDGE · NORMAL · CH1</text><text x="200" y="165" text-anchor="middle" fill="#64748b" font-size="10" font-family="sans-serif">缓慢旋转触发电平至锁定</text>';
+                        break;
+                    case 5:
+                    default:
+                        caption = p === 1 ? '光标测量 Vpp / 周期' : '记录档位换算与有效数字';
+                        body =
+                            p === 1
+                                ? '<rect x="80" y="82" width="240" height="96" rx="4" fill="#020617" stroke="#334155"/><path d="M100 130 Q160 95 220 130" fill="none" stroke="#34d399" stroke-width="2"/><line x1="130" y1="85" x2="130" y2="165" stroke="#fbbf24" stroke-dasharray="3 2"/><line x1="230" y1="85" x2="230" y2="165" stroke="#fbbf24" stroke-dasharray="3 2"/>'
+                                : '<rect x="100" y="98" width="200" height="54" rx="4" fill="#1e293b" stroke="#334155"/><text x="200" y="122" text-anchor="middle" fill="#94a3b8" font-size="11" font-family="sans-serif">记录 ×1/×10、耦合、量程</text>';
+                        break;
+                }
+            }
+
+            const svg =
+                '<svg xmlns="http://www.w3.org/2000/svg" width="' +
+                W +
+                '" height="' +
+                H +
+                '" viewBox="0 0 ' +
+                W +
+                ' ' +
+                H +
+                '"><defs><linearGradient id="tutGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1e293b"/><stop offset="1" stop-color="#0f172a"/></linearGradient></defs><rect width="' +
+                W +
+                '" height="' +
+                H +
+                '" fill="url(#tutGrad)"/>' +
+                body +
+                '<text x="200" y="26" text-anchor="middle" fill="#94a3b8" font-size="12" font-weight="600" font-family="sans-serif">' +
+                z(caption) +
+                '</text><text x="200" y="' +
+                (H - 8) +
+                '" text-anchor="middle" fill="#475569" font-size="9" font-family="sans-serif">内嵌矢量示意 · 对照文字步骤</text></svg>';
+            return svgDataUri(svg);
+        }
+
+        let stepData = {};
+        let currentExperimentConfig = null;
+
+        const EXPERIMENTS = {
+            '惠斯通电桥测电阻': {
+                menuLabels: ['电桥接线与保护', '比例臂与比较臂', '粗调与电源通断', '细调指零与换向', 'Rx计算与不确定度'],
+                reportKnowledge: ['惠斯通电桥平衡条件与桥路灵敏度', '检流计保护与滑线触头接触电阻对平衡的影响', '测量不确定度的 A 类、B 类及合成思路'],
+                reportPath: ['复习教材「直流电桥」「电势差计与电桥」相关章节与例题', '用标准电阻或仿真对比，检查 Rx 数量级与误差带是否合理'],
+                steps: {
+                    1: { title: "电桥电路连接与检流计保护", desc: "按原理图连接四臂电阻、电源、保护电阻与检流计；确认桥顶点、滑动触头（或电阻箱端子）压实。通电前检流计宜置于低灵敏度或保护挡。", tut: { steps: ["四臂构成闭合桥路，先接电阻桥臂再接检流计支路", "电源经开关接入，通电瞬间观察检流计偏转是否剧烈", "逐步提高灵敏度，确认平衡调节在可控范围内"], warnings: ["严禁检流计两接线柱直接并联在电源两端", "粗调前灵敏度不要一次拧到最高"], }, assistMock: { errorType: "电桥接线与保护", detail: "桥顶点接触不良或检流计起始灵敏度过高，易导致虚假读数或打表现象。", feedback: "**原因分析**：接线未压实或保护未到位时，偏转可能掩盖真实的桥路不平衡方向。\n\n**纠错指导**：\n1. **编号1（红框1）**：复查四臂交点、电源与检流计结点，轻拨导线确认无虚假接触。\n2. **编号2（红框2）**：灵敏度从低挡起步，偏转方向正常后再逐级升高。", marks: [{ x: 255, y: 188, w: 128, h: 108, n: 1 }, { x: 528, y: 248, w: 112, h: 92, n: 2 }] } },
+                    2: { title: "比例臂与比较臂阻值选取", desc: "根据待测电阻数量级设定比例臂 R1/R2（或滑线桥臂长比），并使比较臂 R0 处于可调范围的中间区，便于达到平衡。", tut: { steps: ["粗测或估计 Rx 的数量级", "使 R1、R2 取相等或按实验讲义给定比值", "将 R0 或滑线触头先置于中段，留出双向调节余量"], warnings: ["比较臂在极端位易导致无平衡或跳变", "记录所用比例关系以便代入公式"], }, assistMock: { errorType: "桥臂配比选取", detail: "比较臂调节余量不足或比例臂未按预定取值，平衡搜索范围过窄。", feedback: "**原因分析**：Rx 与 R0、比例臂关系需落在仪器线性工作区，否则难以指零。\n\n**纠错指导**：\n1. **编号1（红框1）**：核对 R1、R2 是否与讲义一致并记录挡位或名义值。\n2. **编号2（红框2）**：将比较臂回到中段后重新粗调，观察检流计偏转方向是否可反向。", marks: [{ x: 308, y: 212, w: 122, h: 98, n: 1 }, { x: 588, y: 192, w: 98, h: 86, n: 2 }] } },
+                    3: { title: "电源通断与粗调平衡", desc: "在合适电源电压下，先用粗调（大幅改变比较臂或滑动触头）观察检流计偏转方向，判断应向哪一侧继续调节。", tut: { steps: ["电压由小到大试通，每次短时接通观察", "根据指针偏转方向决定增大或减小 R0（或移动触头）", "逼近粗平衡后再转入细调"], warnings: ["通断使用开关，禁止带电硬拔导线", "长时间大偏转时降低电源或降低灵敏度"], }, assistMock: { errorType: "电源与粗调顺序", detail: "电源未从零试通或粗调方向错误，检流计长时间单向满偏。", feedback: "**原因分析**：粗调用于判断桥路失衡方向，电压过高或动作过猛易打表。\n\n**纠错指导**：\n1. **编号1（红框1）**：确认电源回路串有保护电阻且开关动作规范。\n2. **编号2（红框2）**：大幅度改变比较臂一两挡，记录偏转方向是否随之翻转。", marks: [{ x: 272, y: 168, w: 118, h: 100, n: 1 }, { x: 512, y: 292, w: 108, h: 88, n: 2 }] } },
+                    4: { title: "细调平衡与指零判断", desc: "缓慢调节比较臂或滑线触头，使检流计指零；必要时交换电源极性做换向测量，以削弱热电势影响。", tut: { steps: ["逐级提高灵敏度做细调，指零应在高灵敏度挡仍成立", "检查零点是否为稳定点而非抖动点", "换向测量取平均可减少热电动势误差"], warnings: ["高灵敏度下动作要慢，避免触感电流冲击", "若始终无法指零，回到上一步检查桥臂比与接触"], }, assistMock: { errorType: "指零与灵敏度", detail: "假平衡或灵敏度不足，调换电源极性后零点明显漂移。", feedback: "**原因分析**：接触电势、热电势或未真正达到电桥平衡会导致假指零。\n\n**纠错指导**：\n1. **编号1（红框1）**：在最高安全灵敏度下轻敲表头座，确认指针回零稳定。\n2. **编号2（红框2）**：交换电源正负极重复平衡，比较两次 R0 读数是否一致。", marks: [{ x: 238, y: 198, w: 132, h: 112, n: 1 }, { x: 552, y: 258, w: 106, h: 94, n: 2 }] } },
+                    5: { title: "计算 Rx 与不确定度", desc: "用平衡式 Rx = (R1/R2)·R0（或本实验讲义给定形式）计算待测电阻；多次测量求平均值，并按仪器等级估算不确定度。", tut: { steps: ["列表记录每次平衡时的 R1、R2、R0 及环境备注", "代入公式求 Rx，注意有效数字与单位", "估算各量的仪器误差并合成"], warnings: ["记录温度与电桥型号（箱式/滑线）以便复查", "勿忘写清一次测量与多次测量的处理差异"], }, assistMock: { errorType: "公式与数据处理", detail: "比例臂代入错误或有效数字处理不当，导致 Rx 与不确定度表述不规范。", feedback: "**原因分析**：电桥公式依赖所选桥型的等效电路，数据处理需与测量次数一致。\n\n**纠错指导**：\n1. **编号1（红框1）**：用示意图核对 Rx 所在桥臂与公式中 R0 的对应关系。\n2. **编号2（红框2）**：用同一组数据自检：若改变 R1/R2 比值，Rx 结果是否仍接近。", marks: [{ x: 296, y: 172, w: 120, h: 104, n: 1 }, { x: 568, y: 278, w: 100, h: 86, n: 2 }] } }
+                }
+            },
+            '单管共射放大电路调试': {
+                menuLabels: ['接线规范检查', '电位器Rb调节', '静态工作点测量', '波形不失真观察', '放大倍数计算'],
+                reportKnowledge: ['三极管静态工作点（Q 点）的物理意义及稳定性', '耦合电容在交直流电路中的隔离与导通', '示波器探头 ×1/×10 与触发电平对读数的影响'],
+                reportPath: ['复习《模拟电子技术》单管放大电路与失真分析章节', '用 Multisim 或实测对比 Rb 变化对波形与 Au 的影响'],
+                steps: {
+                    1: { title: "接线规范检查", desc: "请完成三极管、Rc、Rb 及耦合电容的接线。特别注意电解电容极性与三极管引脚定义。", tut: { steps: ["根据电路图识别三极管的 E、B、C 极", "耦合电容长脚为正，短脚为负", "电阻需根据色环值核对阻值后再接入"], warnings: ["严禁在通电状态下插拔元件", "三极管极性接反可能导致元件发烫甚至损坏"] }, assistMock: { errorType: "硬件接线与极性", detail: "识别到基极回路疑似虚接，且输入耦合电容极性可能与原理图不一致。", feedback: "**原因分析**：本步骤易出现极性误判与面包板接触不良。\n\n**纠错指导**：\n1. **编号1（红框1）**：确认三极管基极(B)至输入耦合电容引脚是否压实、未跨行。\n2. **编号2（红框2）**：对照原理图核对电解电容正负极与电源地参考点。", marks: [{ x: 260, y: 195, w: 125, h: 110, n: 1 }, { x: 540, y: 255, w: 105, h: 95, n: 2 }] } },
+                    2: { title: "电位器 Rb 调节", desc: "调节 Rb 使静态电流处于适中范围。观察电位器旋钮位置，不要旋转过快或至死区。", tut: { steps: ["将电位器跨接在面包板中缝", "顺时针调节增大阻值，逆时针减小", "调节至 Vce 约为电源电压的一半左右"], warnings: ["调节力度适中，避免破坏内部触点", "如数值无变化，检查电位器是否虚接"] }, assistMock: { errorType: "调节与偏置异常", detail: "调节后静态工作点变化不明显，疑似电位器未可靠接入或处于异常行程区。", feedback: "**原因分析**：Rb 分压支路未形成有效调节，或表笔测量点未落在关键节点上。\n\n**纠错指导**：\n1. **编号1（红框1）**：检查电位器三脚是否分别接至规定网络，避免两脚被意外短接。\n2. **编号2（红框2）**：缓慢旋转旋钮并同步观察 Vce / Ic 是否连续变化。", marks: [{ x: 320, y: 220, w: 115, h: 100, n: 1 }, { x: 600, y: 180, w: 95, h: 88, n: 2 }] } },
+                    3: { title: "静态工作点测量", desc: "使用万用表测量 Vbe、Vce。注意表笔接触牢固，防止短路。", tut: { steps: ["调至直流电压档", "黑表笔接地", "红表笔探测各极"], warnings: ["测量时手部不要接触表笔金属部"] }, assistMock: { errorType: "测量档位与接点", detail: "读数异常或跳变，疑似档位选择不当或表笔与测试点接触不稳。", feedback: "**原因分析**：直流工作点测量对档位与参考地非常敏感。\n\n**纠错指导**：\n1. **编号1（红框1）**：确认万用表为直流电压档，量程由大到小逐步靠近。\n2. **编号2（红框2）**：黑表笔可靠接电路地，红表笔单点探测，避免碰及其他引脚造成短路。", marks: [{ x: 280, y: 160, w: 120, h: 105, n: 1 }, { x: 500, y: 300, w: 100, h: 90, n: 2 }] } },
+                    4: { title: "波形不失真观察", desc: "调节信号发生器，在示波器上观察正弦波，确保无明显削顶、削底或截止失真。", tut: { steps: ["检查探头衰减开关与量程", "调节垂直、水平灵敏度", "调节触发电平使波形稳定"], warnings: ["信号幅值不要超过通道最大量程"] }, assistMock: { errorType: "示波器触发与探头", detail: "波形不稳定或失真形态异常，疑似探头衰减/触发电平/量程设置不当。", feedback: "**原因分析**：显示问题多为探头比例、垂直刻度与触发条件不匹配。\n\n**纠错指导**：\n1. **编号1（红框1）**：确认探头衰减比（×1/×10）与示波器菜单设置一致。\n2. **编号2（红框2）**：缓慢调节触发电平，使波形稳定锁定后再判断失真类型。", marks: [{ x: 240, y: 200, w: 130, h: 115, n: 1 }, { x: 560, y: 265, w: 110, h: 95, n: 2 }] } },
+                    5: { title: "放大倍数计算", desc: "读取输入、输出电压峰峰值并计算 Au。确保两通道垂直灵敏度一致或已换算到同一标尺。", tut: { steps: ["记录 Vi、Vo 的峰峰值", "Au ≈ Vo(pp) / Vi(pp)", "注意共射放大相位关系"], warnings: ["读数时波形应已稳定触发"] }, assistMock: { errorType: "读数与方法", detail: "峰峰值读取或通道对应关系可能存在偏差，影响放大倍数估算。", feedback: "**原因分析**：Au 估算依赖 Vi、Vo 的同一标尺与峰峰值。\n\n**纠错指导**：\n1. **编号1（红框1）**：分别读取两通道 Vpp，注意垂直灵敏度是否相同。\n2. **编号2（红框2）**：核对 CH1/CH2 与探头是否与实物一致，排除未共地。", marks: [{ x: 300, y: 175, w: 118, h: 102, n: 1 }, { x: 575, y: 285, w: 102, h: 88, n: 2 }] } }
+                }
+            },
+            '示波器的原理与使用': {
+                menuLabels: ['仪器与接地', '探头补偿校准', '垂直与时基', '触发与稳定', '测量与记录'],
+                reportKnowledge: ['示波器垂直、水平、触发三大子系统的作用', '探头补偿对方波边沿与幅度读数的影响', '光标/自动测量与读数不确定度'],
+                reportPath: ['完成教材示波器章节预习与演示实验录像复盘', '专项练习：方波校准探头 + 正弦信号频率/幅值比对'],
+                steps: {
+                    1: { title: "仪器检查与安全接地", desc: "确认示波器、信号源、被测电路共地；检查电源线与通道接口完好，避免浮地测量高压。", tut: { steps: ["所有设备金属外壳与电路地可靠相连", "通道耦合先置 DC 或按讲义要求", "上电后检查自检画面或默认基线"], warnings: ["勿在浮地模式下测市电或高压", "换探头前关闭通道或减小激励"] }, assistMock: { errorType: "接地与共地", detail: "实测波形出现工频干扰或奇怪漂移，疑似共地不良或探头地线过长形成环。", feedback: "**原因分析**：示波器测量对参考地敏感，地线环路会拾取噪声。\n\n**纠错指导**：\n1. **编号1（红框1）**：用短线弹簧地就近接地，避免地线拖曳成环。\n2. **编号2（红框2）**：确认信号源与示波器接地端在同一点汇合。", marks: [{ x: 268, y: 202, w: 120, h: 102, n: 1 }, { x: 536, y: 248, w: 108, h: 90, n: 2 }] } },
+                    2: { title: "探头补偿校准", desc: "在方波校准端子上调节探针补偿电容，使方波顶角不过冲、不圆润。", tut: { steps: ["探头接 CAL 方波输出", "用小螺丝刀调补偿螺钉观察方波", "补偿合格后再测被测信号"], warnings: ["勿过度用力拧补偿螺钉", "×1/×10 档位与菜单须一致"] }, assistMock: { errorType: "探头补偿", detail: "方波过冲严重或上升沿圆滑，补偿电容未调好。", feedback: "**原因分析**：未补偿探头会系统性改变高频幅度与上升时间。\n\n**纠错指导**：\n1. **编号1（红框1）**：在 CAL 端反复微调至方波直角转折清晰、无明显振铃。\n2. **编号2（红框2）**：记录当前为 ×1 还是 ×10，并在示波器输入菜单勾选相同比例。", marks: [{ x: 314, y: 188, w: 114, h: 96, n: 1 }, { x: 592, y: 218, w: 96, h: 84, n: 2 }] } },
+                    3: { title: "垂直与时基初调", desc: "根据被测信号频率与幅度选择合适垂直灵敏度、耦合方式与时基速度，使屏幕约显示 1～3 个周期。", tut: { steps: ["先用较大垂直档位避免信号出屏", "调节 SEC/DIV 使周期数合适", "必要时微调水平位置使波形居中"], warnings: ["输入超过最大额定可能损坏前端", "直流耦合下注意基线被直流分量顶出屏幕"] }, assistMock: { errorType: "垂直与时基", detail: "波形过密或过稀、幅度过小，垂直/时基档位与被测信号不匹配。", feedback: "**原因分析**：示波器显示是“电压—时间”二维映射，两轴刻度需与信号匹配。\n\n**纠错指导**：\n1. **编号1（红框1）**：先调垂直档位使波形占屏高约 60%～80%。\n2. **编号2（红框2）**：再调时基，使一屏内可见稳定整数周期。", marks: [{ x: 286, y: 168, w: 118, h: 100, n: 1 }, { x: 504, y: 292, w: 104, h: 88, n: 2 }] } },
+                    4: { title: "触发模式与波形稳定", desc: "选择边沿/脉宽等触发类型，调节触发电平与释抑，使波形静止不漂移。", tut: { steps: ["触发源选正确通道或外触发", "调节触发电平穿过信号幅度范围", "复杂波形可尝试 Normal/Single 模式"], warnings: ["触发不稳定时先排除信号本身抖动", "外触发注意触发电平与阻抗匹配"] }, assistMock: { errorType: "触发与同步", detail: "波形滚动或触发指示灯乱跳，触发源/触发电平/触发模式设置不当。", feedback: "**原因分析**：自由运行或触发电平不在信号摆幅内会导致无法稳定锁定。\n\n**纠错指导**：\n1. **编号1（红框1）**：确认触发源与被观察通道一致。\n2. **编号2（红框2）**：缓慢旋转触发电平，观察波形何时由滚动变为静止。", marks: [{ x: 248, y: 196, w: 126, h: 108, n: 1 }, { x: 558, y: 262, w: 108, h: 92, n: 2 }] } },
+                    5: { title: "测量读数与实验记录", desc: "用光标、自动测量或读网格估算幅值、频率/周期，并规范记录有效数字与测量条件。", tut: { steps: ["统一探头比例与通道菜单后再读数", "记录垂直/时基档位及读数换算关系", "对同一量进行多次采样取平均"], warnings: ["自动测量在噪声大时可能跳变", "记录探头衰减比避免数量级错误"] }, assistMock: { errorType: "读数与记录", detail: "幅值或频率记录与档位换算不符，或有效数字不规范。", feedback: "**原因分析**：示波器读数需结合 V/div、探头衰减与时间档位。\n\n**纠错指导**：\n1. **编号1（红框1）**：用光标交叉验证网格读数是否一致。\n2. **编号2（红框2）**：在记录表注明 CH、耦合方式、探头比与近似误差来源。", marks: [{ x: 302, y: 178, w: 116, h: 100, n: 1 }, { x: 572, y: 282, w: 100, h: 86, n: 2 }] } }
+                }
+            }
+        };
+
+        function renderReportSuggestions() {
+            const cfg = currentExperimentConfig;
+            const kb = document.getElementById('reportKnowledgeBullets');
+            const lp = document.getElementById('reportLearningPath');
+            if (!cfg) return;
+            if (kb) kb.innerHTML = (cfg.reportKnowledge || []).map((t) => `<li>• ${escapeHtml(t)}</li>`).join('');
+            if (lp) lp.innerHTML = (cfg.reportPath || []).map((text, i) => `<div class="flex items-start gap-3"><div class="w-5 h-5 bg-blue-500/20 text-blue-400 rounded flex items-center justify-center text-[10px] font-bold shrink-0">${i + 1}</div><p class="text-[11px] text-slate-400">${escapeHtml(text)}</p></div>`).join('');
+        }
+
+        function bindExperiment(expName) {
+            const cfg = EXPERIMENTS[expName] || EXPERIMENTS['惠斯通电桥测电阻'];
+            currentExperimentName = expName in EXPERIMENTS ? expName : '惠斯通电桥测电阻';
+            currentExperimentConfig = cfg;
+            stepData = cfg.steps;
+            for (let i = 1; i <= 5; i++) {
+                const row = document.getElementById(`s${i}`);
+                if (!row) continue;
+                const parts = row.querySelectorAll('p');
+                if (parts[1]) parts[1].textContent = cfg.menuLabels[i - 1] || stepData[i].title;
+            }
+            renderReportSuggestions();
+        }
+
+        function handleLogin(e) {
+            e.preventDefault();
+            document.getElementById('displayUser').innerText = `学生：${document.getElementById('userName').value}`;
+            document.getElementById('displayClass').innerText = document.getElementById('userClass').value;
+            document.getElementById('displayExp').innerText = document.getElementById('expName').value;
+            document.getElementById('loginPage').classList.remove('active');
+            document.getElementById('mainPage').classList.add('active');
+            errorLogs = [];
+            envCheckReportLog = [];
+            helpCounter = 0;
+            errorPointCounter = 0;
+            tutViewCounter = 0;
+            labL3Count = 0;
+            bindExperiment(document.getElementById('expName').value);
+            selectStep(1);
+            setTimeout(() => {
+                if (document.getElementById('envCheckEnabled')?.checked) startEnvCheck();
+                else stopEnvCheck();
+            }, 300);
+        }
+
+        function selectStep(stepId) {
+            activeStep = stepId;
+            document.querySelectorAll('.step-item').forEach(el => el.classList.remove('active', 'text-white'));
+            const activeEl = document.getElementById(`s${stepId}`);
+            activeEl.classList.add('active', 'text-white');
+            document.getElementById('stepTitle').innerText = stepData[stepId].title;
+            document.getElementById('stepDesc').innerText = stepData[stepId].desc;
+        }
+
+        function canvasToJpegDataUrl(cv, quality) {
+            if (!cv || cv.width < 2 || cv.height < 2) return null;
+            try {
+                return cv.toDataURL('image/jpeg', quality);
+            } catch (e) {
+                return null;
+            }
+        }
+
+        /** 报告用缩略图：优先实验台摄像头帧，其次用户上传的 currentImage */
+        function getReportThumbDataUrl() {
+            grabBenchCamFrame();
+            const cv = document.getElementById('benchCamCanvas');
+            const fromCam = canvasToJpegDataUrl(cv, 0.52);
+            if (fromCam) return fromCam;
+            if (currentImage) return currentImage;
+            const main = document.getElementById('mainImg');
+            if (main?.src && main.src !== MAIN_IMG_PLACEHOLDER) return main.src;
+            return null;
+        }
+
+        function uploadImage(event) {
+            const file = event.target.files[0];
+            if(!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                currentImage = e.target.result;
+                const img = document.getElementById('mainImg');
+                img.src = currentImage;
+                img.classList.remove('opacity-20', 'grayscale', 'object-cover', 'w-full', 'h-full');
+                img.classList.add('opacity-100', 'max-w-full', 'max-h-full', 'w-auto', 'h-auto', 'object-contain');
+                document.getElementById('emptyTip').classList.add('opacity-0');
+                document.getElementById('delImgBtn').classList.remove('hidden');
+                addMsg("AI", `已接收实拍图。当前步骤：**${stepData[activeStep].title}**。如果您感到困惑，请点击「求助」按钮进行纠错。`);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function deleteAttachment() {
+            currentImage = null;
+            const finp = document.getElementById('fileInp');
+            if (finp) finp.value = '';
+            const img = document.getElementById('mainImg');
+            img.src = MAIN_IMG_PLACEHOLDER;
+            img.classList.remove('opacity-100', 'max-w-full', 'max-h-full', 'w-auto', 'h-auto', 'object-contain');
+            img.classList.add('opacity-20', 'grayscale', 'object-cover', 'w-full', 'h-full');
+            document.getElementById('emptyTip').classList.remove('opacity-0');
+            document.getElementById('delImgBtn').classList.add('hidden');
+            document.getElementById('analysisLabel').classList.add('hidden');
+            const svg = document.getElementById('svgMark');
+            svg.classList.add('hidden');
+            svg.innerHTML = '';
+        }
+
+        function sendAction(type) {
+            if (type !== 'help') return;
+            const text = document.getElementById('msgInput').value.trim();
+            addMsg("USER", `【请求协助】当前步骤：${stepData[activeStep].title}。${text || '我需要纠错检查'}`);
+            document.getElementById('msgInput').value = '';
+            setTimeout(() => {
+                if (!currentImage) addMsg("AI", "请先上传当前步骤的实拍照片或波形图，以便我为您进行精准纠错。**有效纠错次数**仅在上传图片并完成标注后计数。");
+                else handleAIAssistance();
+            }, 800);
+        }
+
+        function handleAIAssistance() {
+            const useFixedUploadAssist = currentImage && currentExperimentName === '惠斯通电桥测电阻';
+            const mock = useFixedUploadAssist ? WHEATSTONE_UPLOAD_FIXED_ASSIST : stepData[activeStep].assistMock;
+            helpCounter++;
+            errorPointCounter += mock.marks.length;
+            errorLogs.push({
+                step: stepData[activeStep].title,
+                type: mock.errorType,
+                detail: mock.detail,
+                timeLabel: new Date().toLocaleString('zh-CN'),
+                snapshotDataUrl: getReportThumbDataUrl(),
+            });
+            showMarks(mock.marks);
+            addMsg("AI", mock.feedback);
+        }
+
+        function showMarks(marks) {
+            document.getElementById('analysisLabel').classList.remove('hidden');
+            const svg = document.getElementById('svgMark');
+            svg.classList.remove('hidden');
+            const badgeAbove = 24;
+            svg.innerHTML = marks.map((m) => {
+                const ty = Math.max(2, m.y - badgeAbove);
+                return `<g><rect x="${m.x}" y="${m.y}" width="${m.w}" height="${m.h}" class="error-rect" rx="8" /><rect x="${m.x}" y="${ty}" width="24" height="24" fill="#ef4444" rx="4" /><text x="${m.x + 12}" y="${ty + 17}" text-anchor="middle" fill="white" font-size="14" font-weight="bold">${m.n}</text></g>`;
+            }).join('');
+        }
+
+        function escapeHtml(s) {
+            return String(s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function stopEnvCheck() {
+            if (envSampleIntervalId !== null) {
+                clearInterval(envSampleIntervalId);
+                envSampleIntervalId = null;
+            }
+            envCheckRunning = false;
+            document.getElementById('envCheckDot')?.classList.remove('animate-pulse');
+        }
+
+        function runScheduledEnvSample() {
+            if (!document.getElementById('envCheckEnabled')?.checked) return;
+            executeEnvCheck();
+        }
+
+        function startEnvCheck() {
+            stopEnvCheck();
+            const enabled = document.getElementById('envCheckEnabled');
+            if (!enabled?.checked) return;
+            envCheckRunning = true;
+            document.getElementById('envCheckDot')?.classList.add('animate-pulse');
+            envSampleIntervalId = setInterval(runScheduledEnvSample, ENV_SAMPLE_MS);
+        }
+
+        function toggleEnvCheck() {
+            if (document.getElementById('envCheckEnabled')?.checked) startEnvCheck();
+            else stopEnvCheck();
+        }
+
+        function pickEnvScenario() {
+            const r = Math.random();
+            if (r < 0.44) {
+                return { level: 0, slug: 'L0', badge: 'L0 合规', summary: '未检出违禁物与典型不安全姿态', suggestion: '', chat: false, badgeTone: 'emerald' };
+            }
+            if (r < 0.62) {
+                return { level: 1, slug: 'L1', badge: 'L1 提醒', summary: '台面杂物偏多，线缆收束不充分', suggestion: '请净空操作区外侧，线缆贴边走线，避开电源与烙铁热源。', chat: false, badgeTone: 'yellow' };
+            }
+            if (r < 0.80) {
+                return { level: 2, slug: 'L2', badge: 'L2 警示', summary: '检测到手机／平板等设备进入实验区', suggestion: '请将无关电子设备移出高压／高温与旋转机械风险半径。', chat: true, badgeTone: 'orange' };
+            }
+            return { level: 3, slug: 'L3', badge: 'L3 严重', summary: '检测到敞口杯具／饮品贴近供电与电子设备', suggestion: '请立刻移走杯具并保持台面干燥，防止液体泼溅短路或触电。', chat: true, badgeTone: 'red' };
+        }
+
+        function envToneClass(tone) {
+            const map = {
+                emerald: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+                yellow: 'bg-yellow-500/15 text-yellow-300 border-yellow-500/35',
+                orange: 'bg-orange-500/15 text-orange-300 border-orange-500/35',
+                red: 'bg-red-600/15 text-red-400 border-red-500/35',
+            };
+            return map[tone] || map.emerald;
+        }
+
+        function updateEnvLevelPane(hit) {
+            const badge = document.getElementById('envLevelBadge');
+            const hint = document.getElementById('envLevelHint');
+            if (!badge || !hint) return;
+            badge.textContent = hit.badge;
+            badge.className = `text-[9px] font-bold px-1.5 py-0.5 rounded-md border shrink-0 ${envToneClass(hit.badgeTone)}`;
+            hint.textContent = `${hit.summary} ${ENV_CHECK_NOTE}`;
+            hint.title = hit.suggestion ? hit.suggestion : hit.summary;
+        }
+
+        function appendEnvHint(hit) {
+            const box = document.getElementById('envHintLog');
+            if (!box) return;
+            const t = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+            const tone = envToneClass(hit.badgeTone);
+            const summaryEsc = escapeHtml(hit.summary);
+            const row = document.createElement('div');
+            row.className = 'flex items-center gap-1 text-[9px] min-w-0 border-b border-white/5 py-1 last:border-b-0';
+            row.innerHTML = `<span class="text-slate-600 font-mono shrink-0 tabular-nums">${escapeHtml(t)}</span><span class="px-1 py-px rounded border text-[8px] shrink-0 ${tone}">${escapeHtml(hit.slug)}</span><span class="env-log-sum text-slate-400 truncate min-w-0">${summaryEsc}</span>`;
+            const sumEl = row.querySelector('.env-log-sum');
+            if (sumEl) sumEl.title = hit.summary || '';
+            box.prepend(row);
+            while (box.children.length > envHintLogMax) box.removeChild(box.lastChild);
+        }
+
+        function grabBenchCamFrame() {
+            const v = document.getElementById('benchCam');
+            const cv = document.getElementById('benchCamCanvas');
+            if (!v || v.classList.contains('hidden')) return;
+            const w = v.videoWidth || 0;
+            const h = v.videoHeight || 0;
+            if (w < 2 || h < 2) return;
+            try {
+                const ctx = cv.getContext('2d');
+                cv.width = w;
+                cv.height = h;
+                ctx.drawImage(v, 0, 0, w, h);
+            } catch (e) {}
+        }
+
+        function executeEnvCheck() {
+            if (!document.getElementById('envCheckEnabled')?.checked) return;
+            const flash = document.getElementById('benchCamFlash');
+            if (flash) {
+                flash.classList.remove('cam-flash');
+                void flash.offsetWidth;
+                flash.classList.add('cam-flash');
+                setTimeout(() => flash.classList.remove('cam-flash'), 340);
+            }
+            grabBenchCamFrame();
+            const hit = pickEnvScenario();
+            const snapForReport = canvasToJpegDataUrl(document.getElementById('benchCamCanvas'), 0.48);
+            if (hit.level > 0) {
+                envCheckReportLog.push({
+                    timeLabel: new Date().toLocaleString('zh-CN'),
+                    level: hit.level,
+                    slug: hit.slug,
+                    badge: hit.badge,
+                    summary: hit.summary,
+                    suggestion: hit.suggestion || '',
+                    badgeTone: hit.badgeTone,
+                    snapshotDataUrl: snapForReport,
+                });
+                while (envCheckReportLog.length > ENV_REPORT_LOG_MAX) envCheckReportLog.shift();
+            }
+            updateEnvLevelPane(hit);
+            appendEnvHint(hit);
+            if (hit.level >= 3) labL3Count += 1;
+            if (hit.chat && hit.level >= 2) {
+                addMsg('AI', `【风险提示｜${hit.badge}】${hit.summary}\n**建议**：${hit.suggestion || '—'}`);
+            }
+        }
+
+        function runEnvCheckManual() {
+            if (!document.getElementById('envCheckEnabled')?.checked) {
+                addMsg('AI', '请先勾选**定期检查**，再使用立即检查。');
+                return;
+            }
+            executeEnvCheck();
+        }
+
+        async function startBenchCamera() {
+            if (!navigator.mediaDevices?.getUserMedia) {
+                addMsg('AI', '当前环境无法拉起本机摄像头，可稍后由教室终端推流或使用中间栏上传图片。**定期检查**仍可继续（结果为示意演示）。');
+                return;
+            }
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: { ideal: 960 }, facingMode: { ideal: 'environment' } },
+                    audio: false,
+                });
+                benchStream?.getTracks().forEach((t) => t.stop());
+                benchStream = stream;
+                const v = document.getElementById('benchCam');
+                v.srcObject = stream;
+                await v.play().catch(() => {});
+                v.classList.remove('hidden');
+                document.getElementById('benchCamFallback')?.classList.add('hidden');
+                addMsg('AI', '摄像头画面已就绪。当前界面为示意原型，正式上线时可对接后端识别。**严重（L3）**事件会计入实验总结。');
+            } catch (e) {
+                addMsg('AI', '未能开启摄像头（权限或占用原因）。可先完成接线与实拍上传；右上角「定期检查」仍会以示意方式计时。');
+            }
+        }
+
+        function formatBubbleHtml(text, variant) {
+            const escaped = escapeHtml(text);
+            const strongCls = variant === 'user' ? 'text-white font-semibold' : 'text-slate-100 font-semibold';
+            const withBold = escaped.replace(/\*\*(.+?)\*\*/g, `<strong class="${strongCls}">$1</strong>`);
+            return withBold.replace(/\n/g, '<br>');
+        }
+
+        function addMsg(sender, text) {
+            const box = document.getElementById('chatBox');
+            const div = document.createElement('div');
+            const isUser = sender === 'USER';
+            div.className = `flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`;
+            const bodyHtml = formatBubbleHtml(text, isUser ? 'user' : 'ai');
+            const bubbleClass = isUser ? 'bg-blue-600 text-white' : 'bg-slate-800/80 text-slate-300';
+            div.innerHTML = `<div class="w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center text-[10px] font-bold ${isUser ? 'bg-slate-700' : 'bg-blue-600'}">${escapeHtml(sender)}</div><div class="p-4 rounded-2xl text-[12px] max-w-[85%] leading-relaxed ${bubbleClass}">${bodyHtml}</div>`;
+            box.appendChild(div);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function openQuickStats() {
+            document.getElementById('qsStep').textContent = stepData[activeStep].title;
+            document.getElementById('qsHelp').textContent = helpCounter;
+            document.getElementById('qsErr').textContent = errorPointCounter;
+            document.getElementById('qsTut').textContent = tutViewCounter;
+            document.getElementById('qsLabL3').textContent = labL3Count;
+            document.getElementById('quickStatsModal').classList.remove('hidden');
+        }
+
+        function closeQuickStats() {
+            document.getElementById('quickStatsModal').classList.add('hidden');
+        }
+
+
+        function openTutorial() {
+            tutViewCounter++;
+            const data = stepData[activeStep].tut;
+            document.getElementById('tutTitle').innerText = `步骤教程：${stepData[activeStep].title}`;
+            document.getElementById('tutImg1').src = tutorialIllustrationDataUri(currentExperimentName, activeStep, 1);
+            document.getElementById('tutImg2').src = tutorialIllustrationDataUri(currentExperimentName, activeStep, 2);
+            document.getElementById('tutTextSteps').innerHTML = data.steps.map((s,i) => `<div class="flex gap-3 text-sm text-slate-300"><span class="w-5 h-5 shrink-0 flex items-center justify-center bg-blue-600/20 text-blue-400 rounded-full text-[10px] font-bold">${i+1}</span><p>${s}</p></div>`).join('');
+            document.getElementById('tutTextWarnings').innerHTML = data.warnings.map(w => `<div class="flex gap-2 text-[12px] text-red-400 font-medium"><svg class="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"></path></svg><p>${w}</p></div>`).join('');
+            document.getElementById('tutorialModal').classList.remove('hidden');
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => startTutDemoAnim());
+            });
+        }
+
+        function closeTutorial() {
+            stopTutDemoAnim();
+            document.getElementById('tutorialModal').classList.add('hidden');
+        }
+
+        function renderReportEnvSafetyTable() {
+            const mount = document.getElementById('reportEnvSafetyLog');
+            if (!mount) return;
+            const reportRows = envCheckReportLog.filter((r) => r.level != null && r.level > 0);
+            if (reportRows.length === 0) {
+                mount.innerHTML =
+                    '<p class="text-xs text-slate-500 p-4 rounded-xl border border-white/5 bg-slate-900/30">未启用定期检查，或本次会话尚无 L1 及以上等级的记录。<span class="text-slate-600">（L0 合规不写入报告 2.2）</span></p>';
+                return;
+            }
+            const n = reportRows.length;
+            const scrollWhenMany = n > 5;
+            const outerScroll = scrollWhenMany
+                ? 'max-h-[min(42rem,55vh)] overflow-y-auto overflow-x-auto custom-scroll'
+                : 'overflow-x-auto';
+            const rows = reportRows
+                .slice()
+                .reverse()
+                .map((r) => {
+                    const tone = envToneClass(r.badgeTone);
+                    const img = r.snapshotDataUrl
+                        ? `<img src="${r.snapshotDataUrl}" class="inline-block w-24 h-16 object-cover rounded-md border border-white/10 bg-black" alt="">`
+                        : '<span class="text-slate-600 text-[10px]">—</span>';
+                    return `<tr class="border-b border-white/5 align-middle"><td class="py-2.5 pr-3 font-mono text-[10px] text-slate-500 whitespace-nowrap align-top">${escapeHtml(r.timeLabel)}</td><td class="py-2.5 pr-3 align-top"><span class="inline-block px-1.5 py-0.5 rounded border text-[10px] font-bold ${tone}">${escapeHtml(r.slug)}</span></td><td class="py-2.5 pr-3 text-[11px] text-slate-300 leading-snug align-top">${escapeHtml(r.summary)}${r.suggestion ? `<span class="block text-[10px] text-slate-500 mt-1">${escapeHtml(r.suggestion)}</span>` : ''}</td><td class="py-2.5 text-right align-top">${img}</td></tr>`;
+                })
+                .join('');
+            const thSticky = scrollWhenMany ? 'sticky top-0 z-10 bg-slate-900/95 backdrop-blur-sm shadow-[0_1px_0_0_rgba(255,255,255,0.08)]' : 'bg-slate-900/40';
+            mount.innerHTML = `<div class="rounded-xl border border-white/10 bg-slate-900/20"><div class="${outerScroll}"><table class="w-full text-left min-w-[520px] border-collapse"><thead><tr class="text-[10px] text-slate-500 border-b border-white/10"><th class="py-2.5 px-3 font-bold ${thSticky}">采样时间</th><th class="py-2.5 px-3 font-bold ${thSticky}">等级</th><th class="py-2.5 px-3 font-bold ${thSticky}">判定摘要</th><th class="py-2.5 px-3 font-bold text-right ${thSticky}">抓拍</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+        }
+
+        function generateReport() {
+            // 设置时间
+            document.getElementById('reportTime').innerText = new Date().toLocaleString();
+
+            // 填充统计数据
+            document.getElementById('helpCountDisplay').innerText = helpCounter;
+            document.getElementById('errorCountDisplay').innerText = errorPointCounter;
+            document.getElementById('tutCountDisplay').innerText = tutViewCounter;
+            document.getElementById('monitorL3Display').innerText = labL3Count;
+
+            const opBox = document.getElementById('reportOpErrors');
+            if (opBox) {
+                if (errorLogs.length > 0) {
+                    opBox.innerHTML = errorLogs
+                        .map(
+                            (log) => `
+                    <div class="p-5 bg-red-500/5 rounded-2xl border border-red-500/10">
+                        <div class="flex flex-wrap justify-between items-center gap-2 mb-2">
+                            <span class="text-[10px] font-bold text-red-400 uppercase tracking-widest">${escapeHtml(log.step)}</span>
+                            <span class="text-[10px] px-2 py-0.5 bg-red-500/10 rounded text-red-400">${escapeHtml(log.type)}</span>
+                        </div>
+                        <p class="text-[10px] text-slate-500 font-mono mb-2">${escapeHtml(log.timeLabel || '')}</p>
+                        <p class="text-sm text-slate-300 leading-relaxed">${escapeHtml(log.detail)}</p>
+                        ${log.snapshotDataUrl ? `<div class="mt-3"><img src="${log.snapshotDataUrl}" class="max-h-40 rounded-lg border border-white/10 object-contain bg-black" alt="纠错关联画面"></div>` : ''}
+                    </div>`
+                        )
+                        .join('');
+                } else {
+                    opBox.innerHTML = `
+                    <div class="p-5 bg-emerald-500/5 rounded-2xl border border-emerald-500/10">
+                        <p class="text-sm text-emerald-400">操作表现优异！整个实验过程中未发现明显操作逻辑错误，验证流程完整有序。</p>
+                    </div>`;
+                }
+            }
+
+            renderReportEnvSafetyTable();
+
+            document.getElementById('reportModal').classList.remove('hidden');
+        }
+
+        (function initEmbeddedMedia() {
+            const main = document.getElementById('mainImg');
+            if (main) main.src = MAIN_IMG_PLACEHOLDER;
+            const expSel = document.getElementById('expName');
+            if (expSel) bindExperiment(expSel.value);
+            selectStep(1);
+        })();
+    </script>
+</body>
+</html>
